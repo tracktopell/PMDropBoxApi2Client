@@ -1,11 +1,15 @@
 
 package com.tracktopell.dropboxclient;
 
+import com.dropbox.core.DbxDownloader;
 import com.dropbox.core.DbxException;
 import com.dropbox.core.DbxRequestConfig;
 
 import com.dropbox.core.v2.DbxClientV2;
+import com.dropbox.core.v2.files.DbxUserFilesRequests;
 import com.dropbox.core.v2.files.FileMetadata;
+import com.dropbox.core.v2.files.FolderMetadata;
+import com.dropbox.core.v2.files.ListFolderBuilder;
 import com.dropbox.core.v2.files.ListFolderResult;
 import com.dropbox.core.v2.files.Metadata;
 import com.dropbox.core.v2.users.FullAccount;
@@ -49,6 +53,9 @@ public class Main {
 			
 			if(av.length==2 && av[0].equals("-wp")){
 				workingRootPath = av[1];
+				if(workingRootPath.equals("/")){
+					workingRootPath = "";
+				}
 			}
 			if(av.length==2 && av[0].equals("-lp")){
 				localRootPath = av[1];
@@ -79,19 +86,96 @@ public class Main {
 			propFilePath = "../config/.PMDBx-Client.properties";
 		}
 
-		Date now = new Date();	
-       	DbxRequestConfig config = new DbxRequestConfig("dropbox/java-tutorial",Locale.getDefault().toString());
+		
+		Properties properties=new Properties();
+		File propertiesFile=null;
+		
+		propertiesFile  = new File(propFilePath);
+		Date lastUpdate = null;
+		Date now		= new Date();
+		long diffSync   = 0;
+		
+       	DbxRequestConfig config = new DbxRequestConfig("dropbox/java-tutorial");
 		DbxClientV2 client = new DbxClientV2(config, paramAccessToken );
 		FullAccount account = client.users().getCurrentAccount();
 
+		if(propertiesFile.exists() && propertiesFile.canRead()){
+			try {
+				System.out.println("OK, Properties ("+propertiesFile+") Exist, then reading");
+				properties.load(new FileInputStream(propertiesFile));
+				lastUpdate = sdf.parse(properties.getProperty("LAST_UPDATE"));
+			}catch(Exception ioe){
+				System.err.println("Properties Exist but Can't read LAST_UPDATE from:"+propertiesFile);
+				ioe.printStackTrace(System.err);
+				System.exit(2);
+			}
+		} else {
+			lastUpdate = now;
+		}
+		
+		diffSync   = now.getTime() - lastUpdate.getTime();
 		System.out.println("==================================[PMDBx-Client "+VERSION+"]=================================");
-		System.out.println("\t\tworkingRootPath:"+workingRootPath);
+		System.out.println("\t\tworkingRootPath:"+(workingRootPath.equals("")?"/":workingRootPath));
 		System.out.println("\t\t  localRootPath:"+localRootPath);
 		System.out.println("\t\t            now:"+sdf.format(now));
-		System.out.println("\t\t        Account:"+account.getName().getDisplayName());
+		System.out.println("\t\t        Account:"+account.getName().getDisplayName());						
+		System.out.println("\t\t     lastUpdate:"+sdf.format(lastUpdate)+", from now is:"+prettyTime(diffSync));
+		System.out.println("\t\t    AccessToken:"+paramAccessToken);
 		System.out.println("=============================================================================================");
+		
+		
+		ListFolderBuilder listFolderBuilder = client.files().listFolderBuilder(workingRootPath);
+		listFolderBuilder.withRecursive(true).withIncludeHasExplicitSharedMembers(true).withIncludeMediaInfo(true);		
+		ListFolderResult result = listFolderBuilder.start();
+		       
+		File localFile = null;
+		int countFiles = 0;
+        for (Metadata md : result.getEntries()) {
+			countFiles++;
+		}
+		System.out.println("\tcountFiles="+countFiles);
+		
+		listFolderBuilder = client.files().listFolderBuilder(workingRootPath);
+		listFolderBuilder.withRecursive(true).withIncludeHasExplicitSharedMembers(true).withIncludeMediaInfo(true);		
+		result = listFolderBuilder.start();
+		
+		localFile = null;
+		
+		for (Metadata md : result.getEntries()) {
+			if(md instanceof FolderMetadata){
+				FolderMetadata dmd = (FolderMetadata)md;
+				System.out.print("\t{"+dmd.getId()+"} "+dmd.getPathLower());
+
+				localFile = new File(localRootPath,dmd.getPathLower());
+				if(!localFile.exists()){
+					boolean created = localFile.mkdirs();
+					System.out.println(" [v]");
+				} else {
+					System.out.println(" [-]");
+				}
+			} else if(md instanceof FileMetadata){
+				FileMetadata   fmd = (FileMetadata)md;
 				
+				System.out.print("\t["+fmd.getId()+"] "+fmd.getPathLower()+"\tsize:"+fmd.getSize()+"\tcm:"+fmd.getClientModified()+"\tsm"+fmd.getServerModified());
+
+				localFile = new File(localRootPath,fmd.getPathLower());
+
+				if(!localFile.exists()){
+					DbxDownloader<FileMetadata> download = client.files().download(fmd.getPathLower());
+					FileOutputStream fos = new FileOutputStream(localFile);
+					download.download(fos);
+					fos.close();
+					System.out.println(" [v]");
+				} else {						
+					System.out.println(" [-] :: "+localFile.length());
+				}
+			}
+		}
+
+		System.out.println("\t[3]->");		
+		//listRecursevly(client, "", 0);		
     }
+	
 	
 	private static String prettyTime(long msR){
 		long ms = Math.abs(msR);
