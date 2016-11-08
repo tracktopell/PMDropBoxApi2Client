@@ -249,21 +249,31 @@ public class Main {
 					System.out.println("[v] ("+md5+ ") [cm:" + sdf.format(fmd.getClientModified()) + ",sm:" + sdf.format(fmd.getServerModified())+"] <"+(t2-t1)+">");
 				} else {
 					long lfm = localFile.lastModified();
-					long rfm = fmd.getServerModified().getTime();
+					long sfm = fmd.getServerModified().getTime();
 					long cfm = fmd.getClientModified().getTime();
 					
-					boolean shouldDownload = (rfm - lfm) >0;
-					boolean shouldUpload   = (rfm - lfm)<=0;
+					System.out.print(":: " + localFile.length() + " :: ("+md5+") [lm:"+sdf.format(new Date(lfm))+", sm:"+sdf.format(new Date(sfm))+", cm:"+sdf.format(new Date(cfm))+"] ");
+					
+					boolean shouldDownload = (sfm - lfm) >0;
+					boolean shouldUpload   = (sfm - lfm)<=0;
 					if(shouldDownload){
-						DbxDownloader<FileMetadata> download = client.files().download(fmd.getPathLower());
-						FileOutputStream fos = new FileOutputStream(localFile);
-						download.download(fos);
-						fos.close();
 						t1 = System.currentTimeMillis();
 						md5 = calculateMD5(localFile);
 						t2 = System.currentTimeMillis();
-						emd.setMd5(md5);
-						System.out.println("[V] :: " + localFile.length() + " :: ("+md5+") [lm:"+sdf.format(new Date(lfm))+", sm:"+sdf.format(new Date(rfm))+", cm:"+sdf.format(new Date(cfm))+"] "+(shouldDownload?"V":" ")+"<"+(t2-t1)+">");
+						SyncControlRecord xt6 = syncControlRecordMap.get(fmd.getPathLower());
+						if(xt6!=null && !xt6.getMd5().equals(md5)){						
+							DbxDownloader<FileMetadata> download = client.files().download(fmd.getPathLower());
+							FileOutputStream fos = new FileOutputStream(localFile);
+							download.download(fos);
+							fos.close();
+							t1 = System.currentTimeMillis();
+							md5 = calculateMD5(localFile);
+							t2 = System.currentTimeMillis();
+							emd.setMd5(md5);
+							System.out.println("[V] :: " + localFile.length() + " :: ("+md5+" != "+xt6.getMd5()+") "+(shouldDownload?"V":" ")+"<"+(t2-t1)+">");
+						} else{
+							System.out.println("[=] :: " + localFile.length() + " :: ("+md5+" == "+xt6.getMd5()+") "+(shouldDownload?"V":" ")+"<"+(t2-t1)+">");
+						}
 					} else if(shouldUpload){
 						t1 = System.currentTimeMillis();
 						md5 = calculateMD5(localFile);
@@ -271,23 +281,24 @@ public class Main {
 						
 						SyncControlRecord xt6 = syncControlRecordMap.get(fmd.getPathLower());
 						if(xt6!=null && !xt6.getMd5().equals(md5)){
-							emd.setMd5(md5);						
+													
 							FileInputStream fis = new FileInputStream(localFile);
 							client.files().uploadBuilder(fmd.getPathLower()).
 									withMode(WriteMode.OVERWRITE).
 									withClientModified(new Date(lfm)).
 									uploadAndFinish(fis);
-							System.out.println("[^] :: " + localFile.length() + " :: ("+md5+") [lm:"+sdf.format(new Date(lfm))+", sm:"+sdf.format(new Date(rfm))+", cm:"+sdf.format(new Date(cfm))+"] "+(shouldDownload?"U":" ")+"<"+(t2-t1)+">");
+							emd.setMd5(md5);
+							System.out.println("[^] :: " + localFile.length() + " :: ("+md5+" != "+xt6.getMd5()+") "+(shouldDownload?"U":" "));
 						} else {
 							emd.setMd5(md5);
-							System.out.println("[=] :: " + localFile.length() + " :: ("+md5+") [lm:"+sdf.format(new Date(lfm))+", sm:"+sdf.format(new Date(rfm))+", cm:"+sdf.format(new Date(cfm))+"] =<"+(t2-t1)+">");
-						}											
+							System.out.println("[=] :: " + localFile.length() + " :: ("+md5+" == "+xt6.getMd5()+") ");
+						}
 					} else {
 						t1 = System.currentTimeMillis();
 						md5 = calculateMD5(localFile);
 						t2 = System.currentTimeMillis();
 						emd.setMd5(md5);
-						System.out.println("[_] :: " + localFile.length() + " :: ("+md5+") [lm:"+sdf.format(new Date(lfm))+", sm:"+sdf.format(new Date(rfm))+", cm:"+sdf.format(new Date(cfm))+"] =<"+(t2-t1)+">");
+						System.out.println("[_] :: " + localFile.length() + " :: ("+md5+") ");
 					}					
 				}
 			}
