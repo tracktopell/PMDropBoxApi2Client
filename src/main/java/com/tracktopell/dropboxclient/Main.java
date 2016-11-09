@@ -25,6 +25,7 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.LinkedHashMap;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Properties;
 import org.apache.commons.codec.digest.DigestUtils;
@@ -32,7 +33,7 @@ import org.apache.commons.io.FileUtils;
 
 public class Main {
 
-	private static final String VERSION = "1.0.0";
+	//private static final String VERSION = "1.0.0";
 	public static final SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMdd_HHmmssSSS");
 	private static long deltaDifForUpload = 10;
 	private static final String accessToken = "5kCy-CaDYpAAAAAAAAEiyl4mCLO75WU9f4_44nPEOO_qNmiepyfHcRLseb_4wBsm"; // dropbox@perfumeriamarlen.com.mx / pmarlen#Dr0pb0x
@@ -40,13 +41,29 @@ public class Main {
 	private static boolean TEST = false;
 	private static final String CONTROLSYNC_FILE = "PMDB_ControlSync.data";
 	private static final String CONTROLSYNC_PROP = "PMDB_ControlSync.properties";
+	
+	private static String project_vesion = null;
+	private static String getVersion(){
+		if(project_vesion == null){
+			Properties propVersion = new Properties();
+			try{
+				propVersion.load(Main.class.getResourceAsStream("/Version.properties"));
+				project_vesion = propVersion.getProperty("project.version");
+			}catch(IOException ioe){
+				project_vesion = "-.-";
+				ioe.printStackTrace(System.err);
+			}
+		}
+		return project_vesion;
+		
+	}
 	public static void main(String[] args) throws IOException, DbxException {
 		
 		String configRootPath  = "./";
 		File   configRootFile = new File(configRootPath);
 				
 		if (args.length == 0) {
-			System.err.println("==================================[PMDBx-Client " + VERSION + "]=================================");
+			System.err.println("==================================[PMDBx-Client " + getVersion() + "]=================================");
 			System.err.println("  usage: \tMain   -accessToken=DopBoxAccessToken -wp=workingRootPath   -lp=localRootPath   -debug=[true|false] -test=[true|false]");
 			System.err.println("example server: \tMain   -accessToken=5kCy-CaDYpAAAAAAAAASgvkDbDCQ_r3SWrpasvDKnX4GY-Nm17oSiGtU0D2B3R2K -wp=/test_client   -lp=./PMDBx-Client/");
 			System.err.println("example sucurs: \tMain   -accessToken=6rvKoYjb1tAAAAAAAAAAISaRz3GiZEWDwcO9uv6LoaB_s_AWv0u0DzQjGi06NNhH -wp=/def_png       -lp=./PMDBx-Client/");
@@ -122,7 +139,7 @@ public class Main {
 		long mem = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
 		
 		diffSync = now.getTime() - lastUpdate.getTime();
-		System.out.println("===============================[PMDropBoxApi2Client " + VERSION + "]==============================");
+		System.out.println("===============================[PMDropBoxApi2Client " + getVersion() + "]==============================");
 		System.out.println("\t   TOTAL_MEMORY : " + Runtime.getRuntime().totalMemory());
 		System.out.println("\t    USED_MEMORY : " + mem);
 		System.out.println("\t    FREE_MEMORY : " + Runtime.getRuntime().freeMemory());		
@@ -175,16 +192,18 @@ public class Main {
 		
 		LinkedHashMap<String,DropBoxExplicitMetadata> metadataMap = new LinkedHashMap<String,DropBoxExplicitMetadata>();
 		FolderMetadata lastDmd = null; 
+		System.out.println("==========READING DROPBOX=========>>");
 		for (Metadata md : result.getEntries()) {
+			//System.out.println("\t[r]\t\""+md.getPathDisplay()+"\"");
 			if (md instanceof FolderMetadata) {
 				FolderMetadata dmd = (FolderMetadata) md;
 				final DropBoxExplicitFolderMetadata demd = new DropBoxExplicitFolderMetadata(dmd);
-				final LocalFileView ld = localFileViewMap.get(demd.getFolder().getPathLower());
+				final LocalFileView ld = localFileViewMap.get(demd.getFolder().getPathDisplay());
 				if(ld != null){
 					ld.setExistInCloud(true);
 				}
-				metadataMap.put(demd.getFolder().getPathLower(), demd);
-				if(lastDmd != null && demd.getFolder().getPathLower().startsWith(lastDmd.getPathLower())){
+				metadataMap.put(demd.getFolder().getPathDisplay(), demd);
+				if(lastDmd != null && demd.getFolder().getPathDisplay().startsWith(lastDmd.getPathDisplay())){
 					demd.setPid(lastDmd.getId());
 					lastDmd = dmd;
 				} else {
@@ -194,12 +213,12 @@ public class Main {
 			} else if (md instanceof FileMetadata) {
 				FileMetadata   fmd = (FileMetadata) md;
 				final DropBoxExplicitFileMetadata femd = new DropBoxExplicitFileMetadata(fmd);
-				final LocalFileView ld = localFileViewMap.get(femd.getFile().getPathLower());
+				final LocalFileView ld = localFileViewMap.get(femd.getFile().getPathDisplay());
 				if(ld != null){
 					ld.setExistInCloud(true);
 				}
-				metadataMap.put(femd.getFile().getPathLower(), femd);
-				if(lastDmd != null && femd.getFile().getPathLower().startsWith(lastDmd.getPathLower())){
+				metadataMap.put(femd.getFile().getPathDisplay(), femd);
+				if(lastDmd != null && femd.getFile().getPathDisplay().startsWith(lastDmd.getPathDisplay())){
 					femd.setPid(lastDmd.getId());					
 				} else {
 					
@@ -207,44 +226,50 @@ public class Main {
 			}			
 			countFiles++;
 		}
-		System.out.println("\tcountFiles=" + countFiles);
+		System.out.println("==========DROPBOX FILES:"+ countFiles);
 
 		localFile = null;
 		
-		List<DropBoxExplicitFileMetadata> dbefmUpdateByUpload = new ArrayList<DropBoxExplicitFileMetadata>(); 
-		List<DropBoxExplicitFileMetadata> dbefmUpdateByDelete = new ArrayList<DropBoxExplicitFileMetadata>(); 
+		List<DropBoxExplicitMetadata>       dbefmUpdateByUpload = new ArrayList<DropBoxExplicitMetadata>(); 
+		LinkedList<DropBoxExplicitMetadata> dbefmUpdateByDelete = new LinkedList<DropBoxExplicitMetadata>(); 
 		
 		for (DropBoxExplicitMetadata emd : metadataMap.values()) {
 			FolderMetadata dmd = null;
 			FileMetadata   fmd = null;
+			SyncControlRecord xt6 = syncBeforeControlRecordMap.get(emd.getPathDisplay());
 			
 			if (emd.isDirectpory()) {
 				dmd = emd.getFolder();
-				System.out.print("d[" + dmd.getId() + "] \"" + dmd.getPathLower() + "\" ");
+				System.out.print("d[" + dmd.getId() + "] \"" + dmd.getPathDisplay() + "\" ");
 
-				localFile = new File(localRootPath, dmd.getPathLower());
-				if (!localFile.exists()) {
-					boolean created = localFile.mkdirs();
-					System.out.println(" [m] ");
+				localFile = new File(localRootPath, dmd.getPathDisplay());
+				if (!localFile.exists() ){
+					if(xt6==null) {
+						boolean created = localFile.mkdirs();
+						System.out.println(" [m] ");
+					} else {
+						FolderMetadata deleteMD = dmd;
+						System.out.print("[r] add for remove dir");
+						dbefmUpdateByDelete.addFirst(new DropBoxExplicitFolderMetadata(deleteMD));
+					}
 				} else {
 					System.out.println(" [ ] ");
 				}
 			} else {
 				fmd = emd.getFile();
-				SyncControlRecord xt6 = syncBeforeControlRecordMap.get(fmd.getPathLower());
 				
 				String md5 = null;
 				long sfm = fmd.getServerModified().getTime();
 				//long cfm = fmd.getClientModified().getTime();
 				long lfm = 0 ;
-				System.out.println("-[" + fmd.getId() + "] \"" + fmd.getPathLower() + "\"");
+				System.out.println("-[" + fmd.getId() + "] \"" + fmd.getPathDisplay() + "\"");
 				System.out.print("\t\t\t\t\tsize:" + fmd.getSize()+"\tTsm:" + sdf.format(sfm));
-				localFile = new File(localRootPath, fmd.getPathLower());
+				localFile = new File(localRootPath, fmd.getPathDisplay());
 
 				if (!localFile.exists() ) {
 					if( xt6==null ){
 						System.out.print("\tD");
-						DbxDownloader<FileMetadata> download = client.files().download(fmd.getPathLower());
+						DbxDownloader<FileMetadata> download = client.files().download(fmd.getPathDisplay());
 						FileOutputStream fos = new FileOutputStream(localFile);
 						FileMetadata dMD = download.download(fos);
 						fos.close();					
@@ -252,9 +277,9 @@ public class Main {
 						md5 = calculateMD5(localFile);					
 						System.out.print("[v] {"+md5+ "} >> sfm="+sdf.format(dMD.getServerModified()));
 					} else {
-						FileMetadata deleteMD = (FileMetadata)client.files().delete(fmd.getPathLower());
-						System.out.print("[r] sfm:"+sdf.format(deleteMD.getServerModified()));
-						dbefmUpdateByDelete.add(new DropBoxExplicitFileMetadata(deleteMD));
+						FileMetadata deleteMD = fmd;
+						System.out.print("[r] add for remove");
+						dbefmUpdateByDelete.addFirst(new DropBoxExplicitFileMetadata(deleteMD));
 					}
 				} else {
 					lfm = localFile.lastModified();					
@@ -269,7 +294,7 @@ public class Main {
 					boolean shouldUpload   = (sfm - lfm) <0;
 					if(shouldDownload){						
 						System.out.print("\tD");
-						DbxDownloader<FileMetadata> download = client.files().download(fmd.getPathLower());
+						DbxDownloader<FileMetadata> download = client.files().download(fmd.getPathDisplay());
 						FileOutputStream fos = new FileOutputStream(localFile);
 						FileMetadata mdU = download.download(fos);
 						fos.close();
@@ -281,7 +306,7 @@ public class Main {
 					} else if(shouldUpload){						
 						System.out.print("\tU");
 						FileInputStream fis = new FileInputStream(localFile);
-						final FileMetadata uploadMD = client.files().uploadBuilder(fmd.getPathLower()).
+						final FileMetadata uploadMD = client.files().uploadBuilder(fmd.getPathDisplay()).
 								withMode(WriteMode.OVERWRITE).								
 								uploadAndFinish(fis);
 						
@@ -304,19 +329,22 @@ public class Main {
 		}
 		
 			
-		for(DropBoxExplicitFileMetadata dbemf: dbefmUpdateByUpload){
-			metadataMap.remove(dbemf.getFile().getPathLower());
+		for(DropBoxExplicitMetadata dbemf: dbefmUpdateByUpload){
+			metadataMap.remove(dbemf.getFile().getPathDisplay());
 			System.out.println("Updating File list by upload: "+dbemf.getId()+"->"+dbemf);
-			metadataMap.put(dbemf.getFile().getPathLower(), dbemf);
+			metadataMap.put(dbemf.getFile().getPathDisplay(), dbemf);
 		}
 
-		for(DropBoxExplicitFileMetadata dbemf: dbefmUpdateByDelete){
-			metadataMap.remove(dbemf.getFile().getPathLower());
-			System.out.println("Updating File list by delete: "+dbemf.getId()+"->"+dbemf);
+		while(!dbefmUpdateByDelete.isEmpty()){
+			final DropBoxExplicitMetadata removeFirst = dbefmUpdateByDelete.removeFirst();
+			metadataMap.remove(removeFirst.getPathDisplay());
+			client.files().delete(removeFirst.getPathDisplay());
+			System.out.println("\tDropBox rm "+removeFirst.getPathDisplay());
 		}
 
 
 		System.out.println("After Downlad{");
+		LinkedList<File> fileDeleteStack = new LinkedList<File>();
 		for( LocalFileView lfv:localFileViewMap.values()){
 			localFile = new File(localRootPath, lfv.getPath());
 			System.out.print("\t=>"+lfv.getPath());
@@ -328,13 +356,8 @@ public class Main {
 				if(rxD9 == null){
 					// Ahora NO esta en la NUBE
 					File fileToDelete = new File(localRootPath, lfv.getPath());
-					if(fileToDelete.isDirectory()){
-						fileToDelete.delete();
-						System.out.print("\trm dir ?");
-					} else {
-						boolean xxd= fileToDelete.delete();
-						System.out.print("\trm OK?"+xxd);
-					}
+					System.out.print("\tAdded for rm");
+					fileDeleteStack.addFirst(fileToDelete);					
 				} else {
 					// Ahora YA esta en la NUBE
 					System.out.print("\t - TODO OK");
@@ -383,7 +406,12 @@ public class Main {
 		}
 		System.out.println("}");
 
-		
+		while(!fileDeleteStack.isEmpty()){
+			File fileToDelete = fileDeleteStack.removeFirst();
+			System.out.print("\trm "+fileToDelete);
+			boolean xxd= fileToDelete.delete();
+			System.out.println("\t?"+xxd);
+		}
 		
 		
 		PrintStream psProprs = new PrintStream(new File(configRootFile, CONTROLSYNC_FILE));
@@ -770,6 +798,7 @@ interface DropBoxExplicitMetadata{
 	FileMetadata   getFile();
 	void setMd5(String  md5);
 	String getMd5();
+	String getPathDisplay();
 }
 
 class DropBoxExplicitFolderMetadata implements DropBoxExplicitMetadata{
@@ -822,7 +851,7 @@ class DropBoxExplicitFolderMetadata implements DropBoxExplicitMetadata{
 		sb.append("|");
 		sb.append(dmd.getId());
 		sb.append("|");
-		sb.append(dmd.getPathLower());
+		sb.append(dmd.getPathDisplay());
 		sb.append("|||");
 		return sb.toString();
 	}
@@ -841,7 +870,11 @@ class DropBoxExplicitFolderMetadata implements DropBoxExplicitMetadata{
 	public boolean equals(Object obj) {
 		return this.getId().equals(((DropBoxExplicitMetadata)obj).getId());
 	}
-	
+
+	@Override
+	public String getPathDisplay() {
+		return this.dmd.getPathDisplay();
+	}	
 }
 
 class DropBoxExplicitFileMetadata implements DropBoxExplicitMetadata{
@@ -905,7 +938,7 @@ class DropBoxExplicitFileMetadata implements DropBoxExplicitMetadata{
 		sb.append("|");
 		sb.append(fmd.getId());
 		sb.append("|");
-		sb.append(fmd.getPathLower());
+		sb.append(fmd.getPathDisplay());
 		sb.append("|");
 		sb.append(fmd.getSize());
 		sb.append("|");
@@ -927,5 +960,10 @@ class DropBoxExplicitFileMetadata implements DropBoxExplicitMetadata{
 	@Override
 	public boolean equals(Object obj) {
 		return this.getId().equals(((DropBoxExplicitMetadata)obj).getId());
+	}
+
+	@Override
+	public String getPathDisplay() {
+		return this.fmd.getPathDisplay();
 	}
 }
