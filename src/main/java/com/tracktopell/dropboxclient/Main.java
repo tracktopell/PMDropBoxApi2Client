@@ -18,23 +18,21 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.PrintStream;
-import java.security.DigestInputStream;
 import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.text.SimpleDateFormat;
-import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Properties;
 import org.apache.commons.codec.digest.DigestUtils;
 
 public class Main {
 
 	private static final String VERSION = "1.0.0";
-	private static SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMdd_HHmmssSSS");
+	public static final SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMdd_HHmmssSSS");
 	private static long deltaDifForUpload = 10;
 	private static final String accessToken = "5kCy-CaDYpAAAAAAAAEiyl4mCLO75WU9f4_44nPEOO_qNmiepyfHcRLseb_4wBsm"; // dropbox@perfumeriamarlen.com.mx / pmarlen#Dr0pb0x
 	private static boolean DEBUG = true;
@@ -139,7 +137,7 @@ public class Main {
 		System.out.println("=================================================================================================");
 		
 		File fileSync = new File(configRootFile, CONTROLSYNC_FILE);
-		LinkedHashMap<String,SyncControlRecord> syncControlRecordMap = new LinkedHashMap<String,SyncControlRecord>();		
+		LinkedHashMap<String,SyncControlRecord> syncBeforeControlRecordMap = new LinkedHashMap<String,SyncControlRecord>();		
 		
 		if(fileSync.exists() && fileSync.isFile() && fileSync.canRead()){
 			try{
@@ -148,7 +146,7 @@ public class Main {
 				System.out.println("Reading SyncControlRecord : {");
 				for(int numLines = 0; (line = brSync.readLine()) != null; numLines++){
 					SyncControlRecord rr =  new SyncControlRecord(line);
-					syncControlRecordMap.put(rr.getPath(), rr);
+					syncBeforeControlRecordMap.put(rr.getPath(), rr);
 					System.out.println("\t=>"+rr);
 				}
 				System.out.println("}");
@@ -184,7 +182,7 @@ public class Main {
 				if(ld != null){
 					ld.setExistInCloud(true);
 				}
-				metadataMap.put(dmd.getId(), demd);
+				metadataMap.put(demd.getFolder().getPathLower(), demd);
 				if(lastDmd != null && demd.getFolder().getPathLower().startsWith(lastDmd.getPathLower())){
 					demd.setPid(lastDmd.getId());
 					lastDmd = dmd;
@@ -199,7 +197,7 @@ public class Main {
 				if(ld != null){
 					ld.setExistInCloud(true);
 				}
-				metadataMap.put(fmd.getId(), femd);
+				metadataMap.put(femd.getFile().getPathLower(), femd);
 				if(lastDmd != null && femd.getFile().getPathLower().startsWith(lastDmd.getPathLower())){
 					femd.setPid(lastDmd.getId());					
 				} else {
@@ -211,8 +209,9 @@ public class Main {
 		System.out.println("\tcountFiles=" + countFiles);
 
 		localFile = null;
-		long t1,t2;
-		String md5 = null;
+		
+		List<DropBoxExplicitFileMetadata> dbefmUpdateByUpload = new ArrayList<DropBoxExplicitFileMetadata>(); 
+		List<DropBoxExplicitFileMetadata> dbefmUpdateByDelete = new ArrayList<DropBoxExplicitFileMetadata>(); 
 		
 		for (DropBoxExplicitMetadata emd : metadataMap.values()) {
 			FolderMetadata dmd = null;
@@ -220,117 +219,160 @@ public class Main {
 			
 			if (emd.isDirectpory()) {
 				dmd = emd.getFolder();
-				System.out.print("{" + dmd.getId() + "} " + dmd.getPathLower());
+				System.out.print("d[" + dmd.getId() + "] \"" + dmd.getPathLower() + "\" ");
 
 				localFile = new File(localRootPath, dmd.getPathLower());
 				if (!localFile.exists()) {
 					boolean created = localFile.mkdirs();
-					System.out.println("[m]");
+					System.out.println(" [m] ");
 				} else {
-					System.out.println("[ ]");
+					System.out.println(" [ ] ");
 				}
 			} else {
 				fmd = emd.getFile();
-
-				System.out.print("[" + fmd.getId() + "] " + fmd.getPathLower() + "\tsize:" + fmd.getSize());
-
+				SyncControlRecord xt6 = syncBeforeControlRecordMap.get(fmd.getPathLower());
+				
+				String md5 = null;
+				long sfm = fmd.getServerModified().getTime();
+				//long cfm = fmd.getClientModified().getTime();
+				long lfm = 0 ;
+				System.out.println("-[" + fmd.getId() + "] \"" + fmd.getPathLower() + "\"");
+				System.out.print("\t\t\t\t\tsize:" + fmd.getSize()+"\tTsm:" + sdf.format(sfm));
 				localFile = new File(localRootPath, fmd.getPathLower());
 
-				if (!localFile.exists()) {
-					DbxDownloader<FileMetadata> download = client.files().download(fmd.getPathLower());
-					FileOutputStream fos = new FileOutputStream(localFile);
-					download.download(fos);
-					fos.close();
-					
-					t1 = System.currentTimeMillis();
-					md5 = calculateMD5(localFile);
-					emd.setMd5(md5);
-					t2 = System.currentTimeMillis();
-					System.out.println("[v] ("+md5+ ") [cm:" + sdf.format(fmd.getClientModified()) + ",sm:" + sdf.format(fmd.getServerModified())+"] <"+(t2-t1)+">");
+				if (!localFile.exists() ) {
+					if( xt6==null ){
+						System.out.print("\tD");
+						DbxDownloader<FileMetadata> download = client.files().download(fmd.getPathLower());
+						FileOutputStream fos = new FileOutputStream(localFile);
+						FileMetadata dMD = download.download(fos);
+						fos.close();					
+						boolean sd = localFile.setLastModified(dMD.getServerModified().getTime());					
+						md5 = calculateMD5(localFile);					
+						System.out.print("[v] {"+md5+ "} >> sfm="+sdf.format(dMD.getServerModified()));
+					} else {
+						FileMetadata deleteMD = (FileMetadata)client.files().delete(fmd.getPathLower());
+						System.out.print("[r] sfm:"+sdf.format(deleteMD.getServerModified()));
+						dbefmUpdateByDelete.add(new DropBoxExplicitFileMetadata(deleteMD));
+					}
 				} else {
-					long lfm = localFile.lastModified();
-					long sfm = fmd.getServerModified().getTime();
-					long cfm = fmd.getClientModified().getTime();
-					
-					System.out.print(":: " + localFile.length() + " :: ("+md5+") [lm:"+sdf.format(new Date(lfm))+", sm:"+sdf.format(new Date(sfm))+", cm:"+sdf.format(new Date(cfm))+"] ");
+					lfm = localFile.lastModified();					
+					md5 = calculateMD5(localFile);
+					System.out.println("\tL[_] >>");
+					if(xt6 != null){
+						System.out.println("\t\t\t\t\tSIZE:"+xt6.getSize()+"\tLAT:"+sdf.format(xt6.getLat())+"\t"+xt6.getMd5());						
+					}
+					System.out.print("\t\t\t\t\tsize:"+localFile.length()+"\tlat:" + sdf.format(lfm)+"\t"+md5);
 					
 					boolean shouldDownload = (sfm - lfm) >0;
-					boolean shouldUpload   = (sfm - lfm)<=0;
-					if(shouldDownload){
-						t1 = System.currentTimeMillis();
+					boolean shouldUpload   = (sfm - lfm) <0;
+					if(shouldDownload){						
+						System.out.print("\tD");
+						DbxDownloader<FileMetadata> download = client.files().download(fmd.getPathLower());
+						FileOutputStream fos = new FileOutputStream(localFile);
+						FileMetadata mdU = download.download(fos);
+						fos.close();
+						boolean sd = localFile.setLastModified(sfm);
 						md5 = calculateMD5(localFile);
-						t2 = System.currentTimeMillis();
-						SyncControlRecord xt6 = syncControlRecordMap.get(fmd.getPathLower());
-						if(xt6!=null && !xt6.getMd5().equals(md5)){						
-							DbxDownloader<FileMetadata> download = client.files().download(fmd.getPathLower());
-							FileOutputStream fos = new FileOutputStream(localFile);
-							download.download(fos);
-							fos.close();
-							t1 = System.currentTimeMillis();
-							md5 = calculateMD5(localFile);
-							t2 = System.currentTimeMillis();
-							emd.setMd5(md5);
-							System.out.println("[V] :: " + localFile.length() + " :: ("+md5+" != "+xt6.getMd5()+") "+(shouldDownload?"V":" ")+"<"+(t2-t1)+">");
-						} else{
-							System.out.println("[=] :: " + localFile.length() + " :: ("+md5+" == "+xt6.getMd5()+") "+(shouldDownload?"V":" ")+"<"+(t2-t1)+">");
-						}
-					} else if(shouldUpload){
-						t1 = System.currentTimeMillis();
-						md5 = calculateMD5(localFile);
-						t2 = System.currentTimeMillis();
+
+						System.out.print("[V] size:" + mdU.getSize()+"\t"+md5+"}");
+
+					} else if(shouldUpload){						
+						System.out.print("\tU");
+						FileInputStream fis = new FileInputStream(localFile);
+						final FileMetadata uploadMD = client.files().uploadBuilder(fmd.getPathLower()).
+								withMode(WriteMode.OVERWRITE).								
+								uploadAndFinish(fis);
 						
-						SyncControlRecord xt6 = syncControlRecordMap.get(fmd.getPathLower());
-						if(xt6!=null && !xt6.getMd5().equals(md5)){
-													
-							FileInputStream fis = new FileInputStream(localFile);
-							client.files().uploadBuilder(fmd.getPathLower()).
-									withMode(WriteMode.OVERWRITE).
-									withClientModified(new Date(lfm)).
-									uploadAndFinish(fis);
-							emd.setMd5(md5);
-							System.out.println("[^] :: " + localFile.length() + " :: ("+md5+" != "+xt6.getMd5()+") "+(shouldDownload?"U":" "));
-						} else {
-							emd.setMd5(md5);
-							System.out.println("[=] :: " + localFile.length() + " :: ("+md5+" == "+xt6.getMd5()+") ");
-						}
+						xt6.setLat(uploadMD.getServerModified().getTime());
+						final DropBoxExplicitFileMetadata dbefmU = new DropBoxExplicitFileMetadata(uploadMD);
+						dbefmU.setMd5(md5);
+
+						dbefmUpdateByUpload.add(dbefmU);
+						localFile.setLastModified(uploadMD.getServerModified().getTime());
+						
+						System.out.print("[^] >> md5="+md5+",["+uploadMD.getId()+"], sfm="+sdf.format(uploadMD.getServerModified().getTime())+"("+uploadMD.getServerModified().getTime()+")"+
+								", cfm="+sdf.format(uploadMD.getClientModified().getTime())+"("+uploadMD.getClientModified().getTime()+")");
 					} else {
-						t1 = System.currentTimeMillis();
-						md5 = calculateMD5(localFile);
-						t2 = System.currentTimeMillis();
-						emd.setMd5(md5);
-						System.out.println("[_] :: " + localFile.length() + " :: ("+md5+") ");
-					}					
+						System.out.print("[=]");
+					}
 				}
+				emd.setMd5(md5);
+				System.out.println(" $");
 			}
 		}
-		if(numSync>0){
-			System.out.println("syncControlRecordMap:After Downlad{");
-			for(String pf:syncControlRecordMap.keySet()){
-				System.out.println("\tX before?"+pf);
-			}
-			System.out.println("}");
-			System.out.println("After Downlad{");
-			for( LocalFileView lfv:localFileViewMap.values()){
-				SyncControlRecord rx9 = syncControlRecordMap.get(lfv.getPath());
-				boolean existBefore = (rx9 != null);				
-				
-				System.out.print("\tLocalFileView:"+lfv+"\t"+(existBefore?" ":"ud?"));
-				if(!existBefore){
+		
+			
+		for(DropBoxExplicitFileMetadata dbemf: dbefmUpdateByUpload){
+			metadataMap.remove(dbemf.getFile().getPathLower());
+			System.out.println("Updating File list by upload: "+dbemf.getId()+"->"+dbemf);
+			metadataMap.put(dbemf.getFile().getPathLower(), dbemf);
+		}
+
+		for(DropBoxExplicitFileMetadata dbemf: dbefmUpdateByDelete){
+			metadataMap.remove(dbemf.getFile().getPathLower());
+			System.out.println("Updating File list by delete: "+dbemf.getId()+"->"+dbemf);
+		}
+
+
+		System.out.println("After Downlad{");
+		for( LocalFileView lfv:localFileViewMap.values()){
+			localFile = new File(localRootPath, lfv.getPath());
+			System.out.print("\t=>"+lfv.getPath());
+			SyncControlRecord       rx9  = syncBeforeControlRecordMap.get(lfv.getPath());
+			DropBoxExplicitMetadata rxD9 = metadataMap.get(lfv.getPath());
+
+			if(rx9 != null){
+				// Antes estaba  en la NUBE
+				if(rxD9 == null){
+					// Ahora NO esta en la NUBE
 					File fileToDelete = new File(localRootPath, lfv.getPath());
 					if(fileToDelete.isDirectory()){
 						fileToDelete.delete();
-						System.out.println("\trm dir ?");
+						System.out.print("\trm dir ?");
 					} else {
-						fileToDelete.delete();
-						System.out.println("\trm OK");
+						boolean xxd= fileToDelete.delete();
+						System.out.print("\trm OK?"+xxd);
 					}
-					
 				} else {
-					System.out.println("\t-");
+					// Ahora YA esta en la NUBE
+					System.out.print("\t - TODO OK");
+				}
+			} else {
+				// Antes NO estaba  en la NUBE
+				if(rxD9 == null){
+					// Ahora NO esta en la NUBE					
+					System.out.print("\tN\tU\t");
+					FileInputStream fis = new FileInputStream(localFile);
+					final FileMetadata uploadMD = client.files().uploadBuilder(lfv.getPath()).
+								withMode(WriteMode.OVERWRITE).
+								uploadAndFinish(fis);
+					final DropBoxExplicitFileMetadata dropBoxExplicitFileMetadata = new DropBoxExplicitFileMetadata(uploadMD);
+					String md5 = calculateMD5(localFile);
+					dropBoxExplicitFileMetadata.setMd5(md5);					
+					
+					metadataMap.put(lfv.getPath(), dropBoxExplicitFileMetadata);
+					localFile.setLastModified(uploadMD.getServerModified().getTime());
+					System.out.print("[^] >> md5="+md5+",["+uploadMD.getId()+
+								"], sfm="+sdf.format(uploadMD.getServerModified().getTime())+"("+uploadMD.getServerModified().getTime()+")"+
+								", cfm="+sdf.format(uploadMD.getClientModified().getTime())+"("+uploadMD.getClientModified().getTime()+")");
+				} else {
+					// Ahora YA esta en la NUBE
+							File fileToDelete = new File(localRootPath, lfv.getPath());
+					if(fileToDelete.isDirectory()){
+						fileToDelete.delete();
+						System.out.print("\trm 2 dir ?");
+					} else {
+						boolean xxd= fileToDelete.delete();
+						System.out.print("\trm 2 OK?"+xxd);
+					}
+
 				}
 			}
-			System.out.println("}");
+			System.out.println("");
 		}
+		System.out.println("}");
+
 		
 		
 		
@@ -351,51 +393,6 @@ public class Main {
 	
 	private static String calculateMD5(File file) throws IOException{
 		return DigestUtils.md5Hex(new FileInputStream(file));
-	}
-	
-	private static String _calculateMD5(File file) {
-		if (md == null) {
-			try {
-				md = MessageDigest.getInstance("MD5");
-			}catch(NoSuchAlgorithmException nsae){
-				throw new IllegalStateException("MD5 cant't calculate:"+nsae.getMessage());
-			}
-		} else {
-			md.reset();
-		}
-		InputStream       fis = null;
-		try {
-			fis = new FileInputStream(file);
-		}catch(IOException ioe){
-			throw new IllegalArgumentException("File cna't open:"+file);
-		}
-		DigestInputStream dis = new DigestInputStream(fis, md);
-		if(buffer == null){
-			buffer = new byte[1048576]; // 1MB
-		}
-		
-		int numRead;
-		try{
-			do {
-				numRead = dis.read(buffer);
-				if (numRead > 0) {
-					md.update(buffer, 0, numRead);
-				}
-			} while (numRead != -1);
-
-			dis.close();
-		}catch(IOException ioe){
-			throw new IllegalStateException("MD5 cant't calculate:"+ioe.getMessage());
-		}
-		byte[] digest = md.digest();
-
-		String result = "";
-
-		for (int i = 0; i < digest.length; i++) {
-			result += Integer.toString((digest[i] & 0xff) + 0x100, 16).substring(1);
-		}
-		return result;
-
 	}
 
 	private static String prettyTime(long msR) {
@@ -447,11 +444,11 @@ public class Main {
 			for(File f: listFiles){
 				if(f.isDirectory()){
 					String name = f.getPath().replace(root.getName(), "").replace("\\", "/");
-					listDist.put(name,new LocalFileView("d", name, null, false));
+					listDist.put(name,new LocalFileView("d", name, null, null,null, false));
 					appendToListDir(listDist, f,root);
 				} else{
 					String name = f.getPath().replace(root.getName(), "").replace("\\", "/");
-					listDist.put(name,new LocalFileView("f", name, null, false));
+					listDist.put(name,new LocalFileView("f", name, null, f.length(),f.lastModified(),false));
 				}
 			}
 		}
@@ -461,13 +458,17 @@ public class Main {
 class LocalFileView{
 	private String type;
 	private String path;
-	private String md5;	
+	private String md5;
+	private Long   size;	
+	private Long   lat;
 	private boolean existInCloud;
 
-	public LocalFileView(String type, String path, String md5, boolean existInCloud) {
-		this.type = type;
-		this.path = path;
-		this.md5 = md5;
+	public LocalFileView(String type, String path, String md5, Long size,Long lat,boolean existInCloud) {
+		this.type  = type;
+		this.path  = path;
+		this.md5   = md5;
+		this.size  = size;
+		this.lat   = lat;
 		this.existInCloud = false;
 	}
 
@@ -529,7 +530,41 @@ class LocalFileView{
 
 	@Override
 	public String toString() {
-		return type+"|"+path+"|"+(existInCloud?"*":"_");
+		if(type.equals("f")){
+			return type+"|"+path+"|"+size+"|"+Main.sdf.format(lat)+"|"+(existInCloud?"*":"_");
+		}else if(type.equals("d")){
+			return type+"|"+path+"|"+(existInCloud?"*":"_");
+		} else{
+			return null;
+		}
+	}
+
+	/**
+	 * @return the size
+	 */
+	public Long getSize() {
+		return size;
+	}
+
+	/**
+	 * @param size the size to set
+	 */
+	public void setSize(Long size) {
+		this.size = size;
+	}
+
+	/**
+	 * @return the lat
+	 */
+	public Long getLat() {
+		return lat;
+	}
+
+	/**
+	 * @param lat the lat to set
+	 */
+	public void setLat(Long lat) {
+		this.lat = lat;
 	}
 	
 }
@@ -540,12 +575,13 @@ class SyncControlRecord {
 	private String id;
 	private String path;
 	private Long   size;
+	private Long   lat;
 	private String md5;
 
 	public SyncControlRecord(String line) {
 		String r[]		= line.split("\\|");
-		final String er = "SyncControlRecord line=\""+line+"\"\t, split="+Arrays.asList(r);
-		System.err.println(er);
+		//final String er = "SyncControlRecord line=\""+line+"\"\t, split="+Arrays.asList(r);
+		//System.err.println(er);
 		
 		this.t			= r[0];
 		if(r[1] != null && r[1].length()>0){
@@ -558,8 +594,11 @@ class SyncControlRecord {
 			if(r[4] != null && r[4].length()>0){
 				this.size	= new Long(r[4]);
 			}
-			if(r[5] != null&& r[5].length()>0){
-				this.md5	= r[5];
+			if(r[5] != null && r[5].length()>0){
+				this.lat	= new Long(r[5]);
+			}
+			if(r[6] != null&& r[6].length()>0){
+				this.md5	= r[6];
 			}
 		}
 	}
@@ -645,6 +684,20 @@ class SyncControlRecord {
 	}
 
 	/**
+	 * @return the lat
+	 */
+	public Long getLat() {
+		return lat;
+	}
+
+	/**
+	 * @param lat the lat to set
+	 */
+	public void setLat(Long lat) {
+		this.lat = lat;
+	}
+
+	/**
 	 * @return the md5
 	 */
 	public String getMd5() {
@@ -680,6 +733,12 @@ class SyncControlRecord {
 			sb.append("");
 		}
 		sb.append("|");
+		if(lat != null){
+			sb.append(lat);
+		} else{
+			sb.append("");
+		}
+		sb.append("|");
 		if(md5!= null){
 			sb.append(md5);
 		} else {
@@ -688,8 +747,7 @@ class SyncControlRecord {
 		
 		return sb.toString();
 
-	}
-	
+	}	
 	
 }
 
@@ -755,7 +813,7 @@ class DropBoxExplicitFolderMetadata implements DropBoxExplicitMetadata{
 		sb.append(dmd.getId());
 		sb.append("|");
 		sb.append(dmd.getPathLower());
-		sb.append("||");
+		sb.append("|||");
 		return sb.toString();
 	}
 
@@ -841,11 +899,18 @@ class DropBoxExplicitFileMetadata implements DropBoxExplicitMetadata{
 		sb.append("|");
 		sb.append(fmd.getSize());
 		sb.append("|");
+		if(fmd.getServerModified()!=null){
+			sb.append(fmd.getServerModified().getTime());
+		} else {
+			sb.append("");
+		}
+		sb.append("|");
 		if(getMd5()!= null){
 			sb.append(getMd5());
 		} else {
 			sb.append("");
 		}
+		
 		return sb.toString();
 	}
 
