@@ -28,6 +28,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Properties;
 import org.apache.commons.codec.digest.DigestUtils;
+import org.apache.commons.io.FileUtils;
 
 public class Main {
 
@@ -343,25 +344,34 @@ public class Main {
 				if(rxD9 == null){
 					// Ahora NO esta en la NUBE					
 					System.out.print("\tN\tU\t");
-					FileInputStream fis = new FileInputStream(localFile);
-					final FileMetadata uploadMD = client.files().uploadBuilder(lfv.getPath()).
-								withMode(WriteMode.OVERWRITE).
-								uploadAndFinish(fis);
-					final DropBoxExplicitFileMetadata dropBoxExplicitFileMetadata = new DropBoxExplicitFileMetadata(uploadMD);
-					String md5 = calculateMD5(localFile);
-					dropBoxExplicitFileMetadata.setMd5(md5);					
-					
-					metadataMap.put(lfv.getPath(), dropBoxExplicitFileMetadata);
-					localFile.setLastModified(uploadMD.getServerModified().getTime());
-					System.out.print("[^] >> md5="+md5+",["+uploadMD.getId()+
-								"], sfm="+sdf.format(uploadMD.getServerModified().getTime())+"("+uploadMD.getServerModified().getTime()+")"+
-								", cfm="+sdf.format(uploadMD.getClientModified().getTime())+"("+uploadMD.getClientModified().getTime()+")");
+					if(localFile.isDirectory()){
+						final FolderMetadata createFolder = client.files().createFolder(lfv.getPath());
+						final DropBoxExplicitFolderMetadata dropBoxExplicitFolfderMetadata = new DropBoxExplicitFolderMetadata(createFolder);
+						
+						metadataMap.put(lfv.getPath(), dropBoxExplicitFolfderMetadata);
+						
+						System.out.print("[m]");
+					} else {
+						FileInputStream fis = new FileInputStream(localFile);
+						final FileMetadata uploadMD = client.files().uploadBuilder(lfv.getPath()).
+									withMode(WriteMode.ADD).
+									uploadAndFinish(fis);
+						final DropBoxExplicitFileMetadata dropBoxExplicitFileMetadata = new DropBoxExplicitFileMetadata(uploadMD);
+						String md5 = calculateMD5(localFile);
+						dropBoxExplicitFileMetadata.setMd5(md5);					
+
+						metadataMap.put(lfv.getPath(), dropBoxExplicitFileMetadata);
+						localFile.setLastModified(uploadMD.getServerModified().getTime());
+						System.out.print("[^] >> md5="+md5+",["+uploadMD.getId()+
+									"], sfm="+sdf.format(uploadMD.getServerModified().getTime())+"("+uploadMD.getServerModified().getTime()+")"+
+									", cfm="+sdf.format(uploadMD.getClientModified().getTime())+"("+uploadMD.getClientModified().getTime()+")");
+					}
 				} else {
 					// Ahora YA esta en la NUBE
-							File fileToDelete = new File(localRootPath, lfv.getPath());
+					File fileToDelete = new File(localRootPath, lfv.getPath());
 					if(fileToDelete.isDirectory()){
-						fileToDelete.delete();
-						System.out.print("\trm 2 dir ?");
+						FileUtils.deleteDirectory(fileToDelete);
+						System.out.print("\trm 2 dir:ok");
 					} else {
 						boolean xxd= fileToDelete.delete();
 						System.out.print("\trm 2 OK?"+xxd);
