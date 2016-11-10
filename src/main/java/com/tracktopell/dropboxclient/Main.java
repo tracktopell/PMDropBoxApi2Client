@@ -165,7 +165,7 @@ public class Main {
 				for(int numLines = 0; (line = brSync.readLine()) != null; numLines++){
 					SyncControlRecord rr =  new SyncControlRecord(line);
 					syncBeforeControlRecordMap.put(rr.getPath(), rr);
-					System.out.println("\t=>"+rr);
+					//System.out.println("\t=>"+rr);
 				}
 				System.out.println("}");
 			}catch(IOException ioe){
@@ -181,10 +181,10 @@ public class Main {
 		appendToListDir(localFileViewMap, localRootPathDir,localRootPathDir,workingRootPath);
 		System.out.println("}");
 		
-		System.out.println("Listing current Fiels in:"+localRootPathDir+"/"+workingRootPath+" {");
-		for( LocalFileView lfv:localFileViewMap.values()){
-			System.out.println("\tLocalFileView:"+lfv);
-		}
+		//System.out.println("Listing current Fiels in:"+localRootPathDir+"/"+workingRootPath+" {");
+		//for( LocalFileView lfv:localFileViewMap.values()){
+		//	System.out.println("\tLocalFileView:"+lfv);
+		//}
 		System.out.println("}");
 		
 		ListFolderBuilder listFolderBuilder = client.files().listFolderBuilder(workingRootPath);
@@ -199,11 +199,11 @@ public class Main {
 		System.out.println("==========READING DROPBOX=========>>");
 		for (Metadata md : result.getEntries()) {
 			if(md.getPathDisplay().length()>workingRootPath.length()){
-				System.out.println("\t[r]\t\""+md.getPathDisplay()+"\"");
+				//System.out.println("\t[r]\t\""+md.getPathDisplay()+"\"");
 			} else {
-				System.out.println("\t[X]\t\""+md.getPathDisplay()+"\"");
-				//continue;
-			}			
+				//System.out.println("\t[X]\t\""+md.getPathDisplay()+"\"");				
+			}
+			
 			if (md instanceof FolderMetadata) {
 				FolderMetadata dmd = (FolderMetadata) md;
 				final DropBoxExplicitFolderMetadata demd = new DropBoxExplicitFolderMetadata(dmd);
@@ -515,7 +515,7 @@ public class Main {
 					unixPath = unixPath.replace(root.getPath(), "");
 				}
 				
-				System.out.println("\t=>appendToListDir("+root.getPath()+")["+unixPath+"], wd=["+wd+"]");
+				//System.out.println("\t=>appendToListDir("+root.getPath()+")["+unixPath+"], wd=["+wd+"]");
 				if(f.isDirectory()){										
 					if(unixPath.contains(wd)){
 						listDist.put(unixPath,new LocalFileView("d", unixPath, null, null,null, false));						
